@@ -1,0 +1,7 @@
+.env
+alembic.ini
+test.db
+__pycache__
+.venv
+alembic/__pycache__
+
