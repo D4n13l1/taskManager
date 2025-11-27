@@ -1,12 +1,12 @@
 from fastapi import APIRouter, HTTPException, Depends
 from models.models import ProjectCreate, Project, ProjectRead, TaskRead, User, Task, TaskCreate, TaskReadOnCreate, TaskUpdate
-from dependencies import get_session
+from dependencies.dependencies import get_session, get_current_user
 from typing import List
 
 from sqlmodel import Session, select 
 from sqlalchemy.exc import IntegrityError
 
-project_router = APIRouter(prefix="/projects", tags=["projects"])
+project_router = APIRouter(prefix="/projects", tags=["projects and tasks"], dependencies=[Depends(get_current_user)])
 
 @project_router.post("/", response_model=ProjectRead)
 async def create_project(project_data: ProjectCreate, session: Session = Depends(get_session)):

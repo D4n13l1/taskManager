@@ -1,21 +1,27 @@
-from fastapi import APIRouter, HTTPException, Depends
+from fastapi import APIRouter, HTTPException, Depends, status
 from models.models import UserCreate, UserRead, User, UserUpdate
-from dependencies import get_session
+from dependencies.dependencies import get_session
 from passlib.context import CryptContext
 from typing import List
+from routes.auth_routes import get_user_by_email
+from dependencies.dependencies import get_current_user
+from models.models import Role
 
 from sqlmodel import Session, select 
 
-user_router = APIRouter(prefix="/users", tags=["users"])
+user_router = APIRouter(prefix="/users", tags=["users"], dependencies=[Depends(get_current_user)])
 
 pwd_context = CryptContext(schemes=["pbkdf2_sha256"], deprecated="auto")
 
 @user_router.post("/", response_model=UserRead)
-async def create_user(user_input: UserCreate, session: Session = Depends(get_session)):
+async def create_user(user_input: UserCreate, session: Session = Depends(get_session), current_user: User = Depends(get_current_user)):
+    if current_user.role != Role.ADMIN:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="User can not create User")
+    print("CurrentUser", current_user)
     hashed_password = pwd_context.hash(user_input.password)
     statement = select(User).where(User.email == user_input.email)
     if session.exec(statement).first():
-        raise HTTPException(status_code=400, detail="Email already registered")
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Email already registered")
     
     db_user = User(name=user_input.name, email=user_input.email, password=hashed_password, role=user_input.role)
     session.add(db_user)
@@ -68,6 +74,3 @@ async def delete_user(user_id: int, session: Session = Depends(get_session)):
     
     return {"detail": "User deleted successfully"}
 
-def get_user_by_email(session: Session, email: str):
-    statement = select(User).where(User.email == email)
-    return session.exec(statement).first()

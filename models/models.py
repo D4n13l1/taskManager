@@ -130,3 +130,7 @@ class TaskRead(SQLModel):
     project: ProjectReadTask
     assigned_to: UserRead
     
+    
+class Login(SQLModel):
+    email: str
+    password: str
