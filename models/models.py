@@ -2,18 +2,30 @@ from sqlmodel import Relationship, SQLModel, Field
 from sqlalchemy import Column, ForeignKey as SA_FK
 from typing import Optional, List
 from enum import Enum
+import uuid
 
 
 class Role(str, Enum):
     ADMIN = "admin"
     USER = "user"
-
+    
+class ProjectRole(str, Enum):
+    MANAGER = "manager"
+    VIEWER = "viewer"
+    EDITOR = "editor"
 
 class ProjectUserLink(SQLModel, table=True):
     project_id: Optional[int] = Field(default=None, foreign_key="project.id", primary_key=True)
-    user_id: Optional[int] = Field(default=None, foreign_key="user.id", primary_key=True)
+    user_id: Optional[uuid.UUID] = Field(default=None, foreign_key="user.id", primary_key=True)
+    # project_role: Optional[ProjectRole] = Field(default=ProjectRole.VIEWER)
 
+class PrivateData(SQLModel, table=True):
+    user_id: uuid.UUID = Field(foreign_key="user.id",primary_key=True)
+    
+    hashed_password: str
+    refresh_token: Optional[str] = None
 
+    user: "User" = Relationship(back_populates="private_data")
 class UserBase(SQLModel):
     name: str
     email: str
@@ -23,7 +35,7 @@ class UserCreate(UserBase):
     password: str
     
 class UserRead(UserBase):
-    id: int
+    id: uuid.UUID
 
 class UserUpdate(SQLModel):
     name: Optional[str] = None
@@ -31,8 +43,12 @@ class UserUpdate(SQLModel):
     password: Optional[str] = None
     
 class User(UserBase, table=True):
-    id: Optional[int] = Field(default=None, primary_key=True)
-    password: str
+    id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True, index=True)
+    private_data: Optional[PrivateData] = Relationship(back_populates="user", 
+                                                       sa_relationship_kwargs={
+                                                           "uselist": False,
+                                                           "cascade":"all, delete-orphan",
+                                                       })
 
     # Projetos criados por este usuário (dono)
     created_projects: List["Project"] = Relationship(back_populates="owner")
@@ -44,7 +60,7 @@ class User(UserBase, table=True):
     
 class ProjectCreate(SQLModel):
     title: str
-    owner_id: Optional[int] = Field(default=None, foreign_key="user.id")
+    owner_id: Optional[uuid.UUID] = Field(default=None, foreign_key="user.id")
     description: Optional[str] = ""
 class ProjectRead(SQLModel):
     id: int
@@ -62,7 +78,7 @@ class Project(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
     title: str
     description: Optional[str] = Field(default="No description provided")
-    owner_id: Optional[int] = Field(default=None, foreign_key="user.id")
+    owner_id: Optional[uuid.UUID] = Field(default=None, foreign_key="user.id")
 
     # Dono (criado por)
     owner: Optional[User] = Relationship(back_populates="created_projects")
@@ -93,7 +109,7 @@ class Task(SQLModel, table=True):
     urgency: UrgencyTask = UrgencyTask.LOW
     
     project_id: Optional[int] = Field(default=None, sa_column=Column(SA_FK("project.id", ondelete="CASCADE"), nullable=True))
-    assigned_to_id: Optional[int] = Field(default=None, foreign_key="user.id")
+    assigned_to_id: Optional[uuid.UUID] = Field(default=None, foreign_key="user.id")
     
     assigned_to: Optional[User] = Relationship(back_populates="tasks_assigned")
     project: Optional[Project] = Relationship(back_populates="tasks")
@@ -103,14 +119,14 @@ class TaskCreate(SQLModel):
     description: Optional[str] = None
     status: StatusTask = StatusTask.TODO
     urgency: UrgencyTask = UrgencyTask.LOW
-    assigned_to_id: Optional[int] = None
+    assigned_to_id: Optional[uuid.UUID] = None
     
 class TaskUpdate(SQLModel):
     title: Optional[str] = None
     description: Optional[str] = None
     status: Optional[StatusTask] = None
     urgency: Optional[UrgencyTask] = None
-    assigned_to_id: Optional[int] = None
+    assigned_to_id: Optional[uuid.UUID] = None
     
 class TaskReadOnCreate(SQLModel):
     id: int
