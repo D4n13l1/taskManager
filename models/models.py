@@ -40,16 +40,17 @@ class User(UserBase, table=True):
 
     # Projetos dos quais este usuário participa (many-to-many)
     participating_projects: List["Project"] = Relationship(back_populates="participants", link_model=ProjectUserLink)
+    
+    
 class ProjectCreate(SQLModel):
     title: str
     owner_id: Optional[int] = Field(default=None, foreign_key="user.id")
-    
-    
-    
+    description: Optional[str] = ""
 class ProjectRead(SQLModel):
     id: int
     title: str
     owner: UserRead
+    description: str
     participants: List[UserRead] = Field(default_factory=list)
     
 class ProjectReadTask(SQLModel):
@@ -60,6 +61,7 @@ class ProjectReadTask(SQLModel):
 class Project(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
     title: str
+    description: Optional[str] = Field(default="No description provided")
     owner_id: Optional[int] = Field(default=None, foreign_key="user.id")
 
     # Dono (criado por)
@@ -101,6 +103,13 @@ class TaskCreate(SQLModel):
     description: Optional[str] = None
     status: StatusTask = StatusTask.TODO
     urgency: UrgencyTask = UrgencyTask.LOW
+    assigned_to_id: Optional[int] = None
+    
+class TaskUpdate(SQLModel):
+    title: Optional[str] = None
+    description: Optional[str] = None
+    status: Optional[StatusTask] = None
+    urgency: Optional[UrgencyTask] = None
     assigned_to_id: Optional[int] = None
     
 class TaskReadOnCreate(SQLModel):
