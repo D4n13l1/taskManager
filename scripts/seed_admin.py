@@ -9,7 +9,7 @@ dotenv.load_dotenv()
 pwd_context = CryptContext(schemes=["pbkdf2_sha256"], deprecated="auto")
 
 ADMIN_EMAIL = "admin@localhost.com"
-ADMIN_PASSWORD = "123456"
+ADMIN_PASSWORD = "12345678"
 
 
 def seed_admin():

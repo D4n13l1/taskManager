@@ -3,6 +3,7 @@ from sqlalchemy import Column, ForeignKey as SA_FK
 from typing import Optional, List
 from enum import Enum
 import uuid
+from pydantic import EmailStr
 
 
 class Role(str, Enum):
@@ -17,7 +18,7 @@ class ProjectRole(str, Enum):
 class ProjectUserLink(SQLModel, table=True):
     project_id: Optional[int] = Field(default=None, foreign_key="project.id", primary_key=True)
     user_id: Optional[uuid.UUID] = Field(default=None, foreign_key="user.id", primary_key=True)
-    # project_role: Optional[ProjectRole] = Field(default=ProjectRole.VIEWER)
+    project_role: Optional[ProjectRole] = Field(default=ProjectRole.VIEWER)
 
 class PrivateData(SQLModel, table=True):
     user_id: uuid.UUID = Field(foreign_key="user.id",primary_key=True)
@@ -28,11 +29,11 @@ class PrivateData(SQLModel, table=True):
     user: "User" = Relationship(back_populates="private_data")
 class UserBase(SQLModel):
     name: str
-    email: str
+    email: EmailStr = Field(index=True, unique=True)
     role: Role = Role.USER
 
 class UserCreate(UserBase):
-    password: str
+    password: str = Field(min_length=8)
     
 class UserRead(UserBase):
     id: uuid.UUID
@@ -60,7 +61,7 @@ class User(UserBase, table=True):
     
 class ProjectCreate(SQLModel):
     title: str
-    owner_id: Optional[uuid.UUID] = Field(default=None, foreign_key="user.id")
+    manager_id: Optional[uuid.UUID] = None
     description: Optional[str] = ""
 class ProjectRead(SQLModel):
     id: int
@@ -68,7 +69,13 @@ class ProjectRead(SQLModel):
     owner: UserRead
     description: str
     participants: List[UserRead] = Field(default_factory=list)
-    
+
+class ProjectReadOnCreate(SQLModel):
+    id: int
+    title: str
+    owner: UserRead
+    description: str
+
 class ProjectReadTask(SQLModel):
     id: int
     title: str

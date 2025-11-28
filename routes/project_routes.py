@@ -1,5 +1,5 @@
-from fastapi import APIRouter, HTTPException, Depends
-from models.models import ProjectCreate, Project, ProjectRead, TaskRead, User, Task, TaskCreate, TaskReadOnCreate, TaskUpdate
+from fastapi import APIRouter, HTTPException, Depends, status
+from models.models import ProjectCreate, Project, ProjectRead, TaskRead, User, Task, TaskCreate, TaskReadOnCreate, TaskUpdate, ProjectUserLink, ProjectRole, ProjectReadOnCreate
 from dependencies.dependencies import get_session, get_current_user
 from typing import List
 
@@ -8,15 +8,37 @@ from sqlalchemy.exc import IntegrityError
 
 project_router = APIRouter(prefix="/projects", tags=["projects and tasks"], dependencies=[Depends(get_current_user)])
 
-@project_router.post("/", response_model=ProjectRead)
-async def create_project(project_data: ProjectCreate, session: Session = Depends(get_session)):
-    db_project = Project(title=project_data.title, owner_id=project_data.owner_id, description=project_data.description)
-    db_user = session.get(User, project_data.owner_id)
-    if not db_user:
-        raise HTTPException(status_code=404, detail="User not found")
+@project_router.post("/", response_model=ProjectReadOnCreate)
+async def create_project(project_data: ProjectCreate, session: Session = Depends(get_session), current_user: User = Depends(get_current_user)):
+    db_project = Project(title=project_data.title, description=project_data.description, owner_id=current_user.id)
     session.add(db_project)
-    session.commit()
+    print(f"id Enviado: {project_data.manager_id}")
+    
+    session.flush() # Cria o id mas sem commit ainda
     session.refresh(db_project)
+    
+    if project_data.manager_id and project_data.manager_id != current_user.id:
+        db_manager = session.get(User, project_data.manager_id)
+        if not db_manager:
+            session.rollback() # Cancela criação se user não existir
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User Not Found")
+        print(f"id Resgatado do banco: {db_manager}")
+        print(f"Manager: {db_manager}")
+        manager_link = ProjectUserLink(project_id=db_project.id, user_id=db_manager.id, project_role=ProjectRole.MANAGER)
+        session.add(manager_link)
+        
+        owner_link = ProjectUserLink(project_id=db_project.id, user_id=current_user.id, project_role=ProjectRole.EDITOR)
+        session.add(owner_link)
+    else:
+        owner_link = ProjectUserLink(
+            project_id=db_project.id, 
+            user_id=current_user.id, 
+            project_role=ProjectRole.MANAGER
+        )
+        session.add(owner_link)
+        
+    session.commit()
+    
     return db_project
 
 @project_router.post("/add_user", response_model=Project)
