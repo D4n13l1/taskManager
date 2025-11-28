@@ -1,9 +1,9 @@
 from fastapi import APIRouter, HTTPException, Depends, status
-from models.models import ProjectCreate, Project, ProjectRead, TaskRead, User, Task, TaskCreate, TaskReadOnCreate, TaskUpdate, ProjectUserLink, ProjectRole, ProjectReadOnCreate
+from models.models import ProjectCreate, Project, ProjectRead, TaskRead, User, Task, TaskCreate, TaskReadOnCreate, TaskUpdate, ProjectUserLink, ProjectRole, ProjectReadOnCreate, Role
 from dependencies.dependencies import get_session, get_current_user
 from typing import List
 
-from sqlmodel import Session, select 
+from sqlmodel import Session, select , or_, and_
 from sqlalchemy.exc import IntegrityError
 
 project_router = APIRouter(prefix="/projects", tags=["projects and tasks"], dependencies=[Depends(get_current_user)])
@@ -66,15 +66,45 @@ async def add_user_to_project(user_id: int, project_id: int, session: Session = 
     return db_project
     
 @project_router.get("/{project_id}", response_model=ProjectRead)
-async def get_project(project_id: int, session: Session = Depends(get_session)):
+async def get_project(project_id: int, session: Session = Depends(get_session), current_user: User = Depends(get_current_user)):   
     db_project = session.get(Project, project_id)
     if not db_project:
         raise HTTPException(status_code=404, detail="Project not found")
-    return db_project
+    if current_user.role == Role.ADMIN:
+        return db_project
+    if db_project.owner_id == current_user.id:
+        return db_project
+    
+    statement = select(ProjectUserLink).where(
+        ProjectUserLink.project_id == project_id,
+        ProjectUserLink.user_id == current_user.id
+    )
+    is_member = session.exec(statement=statement).first()
+    if is_member:
+        return db_project
+    
+    raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="You do not have permission to access this project")
+        
 
 @project_router.get("/", response_model=List[ProjectRead])
-async def get_all_projects(session: Session = Depends(get_session)):
-    projects = session.exec(select(Project)).all()
+async def get_all_projects(session: Session = Depends(get_session), current_user: User = Depends(get_current_user)):
+    if current_user.role == Role.ADMIN:
+        statement = select(Project)
+    else:
+        statement = (select(Project)
+                     .join(ProjectUserLink, isouter=True)
+                     .where(
+                         or_(
+                             Project.owner_id == current_user.id,
+                             and_(
+                                 ProjectUserLink.user_id == current_user.id,
+                                 ProjectUserLink.project_role == ProjectRole.MANAGER
+                             )
+                         )
+                     ).distinct()
+                    )
+
+    projects = session.exec(statement).all()
     return projects
 
 @project_router.delete("/{project_id}", response_model=dict)
