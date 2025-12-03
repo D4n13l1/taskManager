@@ -1,3 +1,4 @@
+import uuid
 from fastapi import APIRouter, HTTPException, Depends, status
 from models.models import ProjectCreate, Project, ProjectRead, TaskRead, User, Task, TaskCreate, TaskReadOnCreate, TaskUpdate, ProjectUserLink, ProjectRole, ProjectReadOnCreate, Role
 from dependencies.dependencies import get_session, get_current_user
@@ -41,12 +42,12 @@ async def create_project(project_data: ProjectCreate, session: Session = Depends
     
     return db_project
 
-@project_router.post("/add_user", response_model=Project)
-async def add_user_to_project(user_id: int, project_id: int, session: Session = Depends(get_session)):
+@project_router.post("/add_user", response_model=ProjectRead)
+async def add_user_to_project(user_id: uuid.UUID, project_id: int, session: Session = Depends(get_session)):
     db_user = session.get(User, user_id)
     db_project = session.get(Project, project_id)
     if not db_user or not db_project:
-        raise HTTPException(status_code=404, detail="User or project not found")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User or project not found")
 
     if db_user in db_project.participants:
         return db_project
@@ -58,10 +59,10 @@ async def add_user_to_project(user_id: int, project_id: int, session: Session = 
         session.refresh(db_project)
     except IntegrityError:
         session.rollback()
-        raise HTTPException(status_code=409, detail="User already added to project")
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="User already added to project")
     except Exception:
         session.rollback()
-        raise HTTPException(status_code=500, detail="Could not add user to project")
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Could not add user to project")
 
     return db_project
     
@@ -69,7 +70,7 @@ async def add_user_to_project(user_id: int, project_id: int, session: Session = 
 async def get_project(project_id: int, session: Session = Depends(get_session), current_user: User = Depends(get_current_user)):   
     db_project = session.get(Project, project_id)
     if not db_project:
-        raise HTTPException(status_code=404, detail="Project not found")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Project not found")
     if current_user.role == Role.ADMIN:
         return db_project
     if db_project.owner_id == current_user.id:
@@ -111,9 +112,9 @@ async def get_all_projects(session: Session = Depends(get_session), current_user
 async def delete_project(project_id: int, session: Session = Depends(get_session), current_user: User = Depends(get_current_user)):
     db_project = session.get(Project, project_id)
     if not db_project:
-        raise HTTPException(status_code=404, detail="Project not found")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Project not found")
     if db_project.owner_id != current_user.id and current_user.role != Role.ADMIN:
-        raise HTTPException(status_code=403, detail="You do not have permission to delete this project")
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="You do not have permission to delete this project")
     session.delete(db_project)
     session.commit()
     return {"detail": "Project deleted successfully"}
@@ -121,16 +122,37 @@ async def delete_project(project_id: int, session: Session = Depends(get_session
 
 ##tasks
 @project_router.post("/{project_id}/tasks", response_model=TaskReadOnCreate)
-async def create_task(project_id: int, data_task: TaskCreate, session: Session = Depends(get_session)):
+async def create_task(project_id: int, data_task: TaskCreate, session: Session = Depends(get_session), current_user: User = Depends(get_current_user)):
     db_project = session.get(Project, project_id)
     db_user = session.get(User, data_task.assigned_to_id)
     if not db_project or not db_user:
-        raise HTTPException(status_code=404, detail="Project or User Not Found")
-    if data_task.assigned_to_id != db_project.owner_id:
-        if db_user not in db_project.participants:
-            raise HTTPException(status_code=400, detail="User is not a participant of the project")
-        
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Project or User Not Found")
+    is_admin = current_user.role == Role.ADMIN
+    is_owner = db_project.owner_id == current_user.id
+    is_manager= False
     
+    if not(is_admin or is_owner):
+        member_link = session.get(ProjectUserLink, (project_id, current_user.id))
+        if member_link and member_link.project_role == ProjectRole.MANAGER:
+            is_manager = True
+
+    if not(is_admin or is_manager or is_owner):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="You do not have permissions to create a task in this project")            
+        
+    if data_task.assigned_to_id:
+        if data_task.assigned_to_id == current_user.id:
+            pass
+        else:
+            db_assigned = session.get(User, data_task.assigned_to_id)
+            if not db_assigned:
+                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User Not Found")
+            
+            is_assignee_owner = db_project.owner_id == db_assigned.id
+            assigned_link = session.get(ProjectUserLink, (project_id, db_assigned.id))
+            
+            if not is_assignee_owner and not assigned_link:
+                raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Assigned is not a participant of this project")
+            
     db_task = Task(title=data_task.title, description=data_task.description, urgency=data_task.urgency, project_id=project_id, assigned_to_id=data_task.assigned_to_id, status=data_task.status)
     session.add(db_task)
     session.commit()
@@ -139,48 +161,108 @@ async def create_task(project_id: int, data_task: TaskCreate, session: Session =
     return db_task
 
 @project_router.get("/{project_id}/task/{task_id}", response_model=TaskRead)
-async def get_task(project_id: int, task_id: int, session: Session = Depends(get_session)):
+async def get_task(project_id: int, task_id: int, session: Session = Depends(get_session), current_user: User = Depends(get_current_user)):
     db_project = session.get(Project, project_id)
     db_task = session.get(Task, task_id)
     if not db_project or not db_task:
-        raise HTTPException(status_code=404, detail="Project or Task Not Founded")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Project or Task Not Found")
+    if db_task.project_id != db_project.id:
+        raise HTTPException(status_code=404, detail="Task does not belogin to this project")
     
+    is_admin = current_user.role == Role.ADMIN
+    is_participant = session.get(ProjectUserLink, (project_id, current_user.id))
+    if not (is_admin or is_participant):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="User is not from the project")
     return db_task
 
 @project_router.get("/{project_id}/tasks", response_model=List[TaskRead])
-async def get_tasks(project_id: int, session: Session = Depends(get_session)):
+async def get_tasks(project_id: int, mines: bool = False, session: Session = Depends(get_session), current_user: User = Depends(get_current_user)):
     db_project = session.get(Project, project_id)
     if not db_project:
-        raise HTTPException(status_code=404, detail="Project Not Found")
-    return db_project.tasks
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Project Not Found")
+    
+    is_participant = session.get(ProjectUserLink, (project_id, current_user.id))
+    is_admin = current_user.role == Role.ADMIN
+    if not (is_participant or is_admin):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="User is not a participant from this project")
+    
+    statement = select(Task).where(Task.project_id == project_id)
+    if mines:
+        statement = statement.where(Task.assigned_to_id == current_user.id)
+    tasks = session.exec(statement).all()
+    return tasks
 
 @project_router.delete("/{project_id}/task/{task_id}", response_model=dict)
-async def delete_task(project_id: int, task_id:int, session: Session = Depends(get_session)):
+async def delete_task(project_id: int, task_id:int, session: Session = Depends(get_session), current_user: User = Depends(get_current_user)):
     db_project = session.get(Project, project_id)
     db_task = session.get(Task, task_id)
     if not db_project or not db_task:
-        raise HTTPException(status_code=404, detail="Project or Task Not Found")
-    session.delete(db_task)
-    session.commit()
-    return {"detail": f"Task {task_id} deleted successfully"}
-
-@project_router.patch("/{project_id}/task/{task_id}", response_model=TaskRead)
-async def update_task(project_id: int, task_id:int, update_task: TaskUpdate, session: Session = Depends(get_session)):
-    db_project = session.get(Project, project_id)
-    db_task = session.get(Task, task_id)
-    if not db_project or not db_task:
-        raise HTTPException(status_code=404, detail="Project or Task Not Found")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Project or Task Not Found")
     if db_task.project_id != db_project.id:
         raise HTTPException(status_code=404, detail="Task does not belogin to this project")
+    
+    is_admin = current_user.role == Role.ADMIN
+    is_owner = current_user.id == db_project.owner_id
+    is_manager = False
+    
+    if not(is_admin or is_owner):
+        member_link = session.get(ProjectUserLink, (project_id, current_user.id))
+        if member_link and member_link.project_role == ProjectRole.MANAGER:
+            is_manager = True
+    if not(is_admin or is_owner or is_manager):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="You do not have permission to delete this task")
+    session.delete(db_task)
+    session.commit()
+    return {"detail": f"Task {task_id} from {project_id} deleted successfully"}
+
+@project_router.patch("/{project_id}/task/{task_id}", response_model=TaskRead)
+async def update_task(project_id: int, task_id:int, update_task: TaskUpdate, session: Session = Depends(get_session), current_user: User = Depends(get_current_user)):
+    db_project = session.get(Project, project_id)
+    statement_task = select(Task).where(Task.id == task_id, Task.project_id == project_id)
+    db_task = session.exec(statement_task).first()
+
+    if not db_project or not db_task:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Project or Task Not Found")
+    
     data_task = update_task.model_dump(exclude_unset=True)
-    if "assigned_to_id" in data_task:
-        db_user = session.get(User, data_task["assigned_to_id"])
-        if not db_user:
-            raise HTTPException(status_code=404, detail="User Not Found")
-    if update_task.assigned_to_id != db_project.owner_id:
-        if db_user not in db_project.participants:
-            raise HTTPException(status_code=400, detail="User is not a participant of the project")
+    
+    is_admin = current_user.role == Role.ADMIN
+    is_owner = db_project.owner_id == current_user.id
+    is_assigned = db_task.assigned_to_id == current_user.id
+    is_manager = False
+    
+    if not(is_admin or is_owner):
+        member_link = session.get(ProjectUserLink, (project_id, current_user.id))
+        if member_link and member_link.project_role == ProjectRole.MANAGER:
+            is_manager = True
+    has_full_access = is_admin or is_owner or is_manager
+    
+    if not(has_full_access or is_assigned):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="You dont have permission to update this task")
+
+    if is_assigned and not has_full_access:
+        if "status" in data_task:
+            data_task = {"status": data_task["status"]}
+        else:
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="You can only update status")
+    
+
+    if "assigned_to_id" in data_task and has_full_access:
+        new_assigned_id = data_task["assigned_to_id"]
         
+        if new_assigned_id is None:
+            pass
+        else:
+            new_assigned = session.get(User, new_assigned_id)
+            
+            if not new_assigned:
+                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User Not Found")
+            
+            if new_assigned.id != db_project.owner_id:
+                link_exists = session.get(ProjectUserLink, (project_id, new_assigned.id))
+                if not link_exists:
+                    raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="New assignee is not a participant")
+                
     db_task.sqlmodel_update(data_task)
     session.add(db_task)
     session.commit()
