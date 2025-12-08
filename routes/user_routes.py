@@ -3,17 +3,17 @@ from models.models import UserCreate, UserRead, User, UserUpdate, PrivateData
 from dependencies.dependencies import get_session
 from passlib.context import CryptContext
 from typing import List
-from dependencies.dependencies import get_admin_user
+from dependencies.dependencies import get_admin_user, get_current_user
 import uuid
 from sqlalchemy.orm import selectinload
 from sqlmodel import Session, select 
 
-user_router = APIRouter(prefix="/users", tags=["users"], dependencies=[Depends(get_admin_user)])
+user_router = APIRouter(prefix="/users", tags=["users"], dependencies=[Depends(get_current_user)])
 
 pwd_context = CryptContext(schemes=["pbkdf2_sha256"], deprecated="auto")
 
 @user_router.post("/", response_model=UserRead)
-async def create_user(user_input: UserCreate, session: Session = Depends(get_session)):
+async def create_user(user_input: UserCreate, session: Session = Depends(get_session), current_user: User = Depends(get_admin_user)):
     hashed_password = pwd_context.hash(user_input.password)
     
     statement = select(User).where(User.email == user_input.email)
@@ -50,7 +50,7 @@ async def get_all_user(session: Session = Depends(get_session)):
     return users
 
 @user_router.patch("/{user_id}", response_model=UserRead)
-async def update_user(user_update: UserUpdate, user_id: uuid.UUID, session: Session = Depends(get_session)):
+async def update_user(user_update: UserUpdate, user_id: uuid.UUID, session: Session = Depends(get_session), current_user: User = Depends(get_admin_user)):
     statement = select(User).where(User.id == user_id).options(selectinload(User.private_data)) #type: ignore
     db_user = session.exec(statement=statement).first()
     
@@ -82,7 +82,7 @@ async def update_user(user_update: UserUpdate, user_id: uuid.UUID, session: Sess
     return db_user
 
 @user_router.delete("/{user_id}", response_model=dict)
-async def delete_user(user_id: uuid.UUID, session: Session = Depends(get_session)):
+async def delete_user(user_id: uuid.UUID, session: Session = Depends(get_session), current_user:User = Depends(get_admin_user)):
     db_user = session.get(User, user_id)
     if not db_user:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")

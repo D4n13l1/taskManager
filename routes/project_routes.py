@@ -1,5 +1,6 @@
 import uuid
 from fastapi import APIRouter, HTTPException, Depends, status
+from pydantic import BaseModel
 from models.models import ProjectCreate, Project, ProjectRead, TaskRead, User, Task, TaskCreate, TaskReadOnCreate, TaskUpdate, ProjectUserLink, ProjectRole, ProjectReadOnCreate, Role
 from dependencies.dependencies import get_session, get_current_user
 from typing import List
@@ -42,9 +43,32 @@ async def create_project(project_data: ProjectCreate, session: Session = Depends
     
     return db_project
 
-@project_router.post("/add_user", response_model=ProjectRead)
-async def add_user_to_project(user_id: uuid.UUID, project_id: int, session: Session = Depends(get_session)):
-    db_user = session.get(User, user_id)
+class UserRequest(BaseModel):
+    user_id: uuid.UUID
+@project_router.patch("/{project_id}/remove_user", response_model=dict)
+async def remove_user_from_project(project_id: int, request: UserRequest, session: Session = Depends(get_session)):
+    db_user = session.get(User, request.user_id)
+    db_project = session.get(Project, project_id)
+    if not db_user or not db_project:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User or project not found")
+
+    if db_user not in db_project.participants:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User is not a participant of the project")
+
+    db_project.participants.remove(db_user)
+    try:
+        session.add(db_project)
+        session.commit()
+        session.refresh(db_project)
+    except Exception:
+        session.rollback()
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Could not remove user from project")
+
+    return {"detail": "User removed from project successfully"}
+
+@project_router.post("/{project_id}/add_user", response_model=ProjectRead)
+async def add_user_to_project(request: UserRequest, project_id: int, session: Session = Depends(get_session)):
+    db_user = session.get(User, request.user_id)
     db_project = session.get(Project, project_id)
     if not db_user or not db_project:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User or project not found")

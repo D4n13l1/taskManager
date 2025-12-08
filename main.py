@@ -19,6 +19,7 @@ app.add_middleware(
     allow_methods=["*"], 
     allow_headers=["*"],
 )
+
 @app.get("/me", response_model=UserRead)
 async def get_current_user_profile(current_user: User = Depends(get_current_user)):
     return current_user
