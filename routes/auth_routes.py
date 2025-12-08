@@ -11,7 +11,6 @@ from core.config import settings
 from datetime import timedelta
 from dependencies.dependencies import validate_refresh_token
 
-from jose import jwt, JWTError
 auth_router = APIRouter(prefix="/auth", tags=["auth"])
 
 @auth_router.post("/login")
