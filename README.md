@@ -11,9 +11,8 @@ Projeto simples de organizador de tarefas (to‑do/project manager) construído 
 
 **Requisitos**
 
-- Python 3.10+ (recomenda-se usar virtualenv/venv)
-- PostgreSQL (ou SQLite para desenvolvimento rápido)
-- Git, Docker (opcional)
+- Python 3.10+
+- PostgreSQL
 
 **Como configurar o ambiente (PowerShell)**
 
@@ -34,28 +33,11 @@ pip install -r requirements.txt
 
 - Copie o arquivo de exemplo de ambiente e crie um `.env` na raiz:
 
-```powershell
-# se existir um .env.example
-copy .env.example .env
-# ou criar manualmente e editar
-notepad .env
-```
-
 - Configure `DATABASE_URL` no `.env`. 
 - PostgreSQL
 
 ```text
 DATABASE_URL=postgresql://postgres:senha@localhost:5432/newjira
-```
-
-> NÃO use `?schema=newjira` na query string — psycopg2 não aceita `schema` como opção.
-
-- Se usar Alembic, atualize também `alembic.ini` (a chave `sqlalchemy.url`) para apontar para a mesma URL do banco.
-
-4. (Opcional) Rodar PostgreSQL via Docker (dev)
-
-```powershell
-docker run --name newjira-postgres -e POSTGRES_PASSWORD=1234 -e POSTGRES_USER=postgres -e POSTGRES_DB=newjira -p 5432:5432 -d postgres:15
 ```
 
 **Aplicar migrations (Alembic)**
