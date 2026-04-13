@@ -6,7 +6,11 @@ from routes.project_routes import project_router
 from routes.auth_routes import auth_router
 from fastapi.middleware.cors import CORSMiddleware
 
-app = FastAPI()
+app = FastAPI(
+    swagger_ui_parameters={
+        "operationsSorter": "method",
+    }
+)
 
 origins = [
     "http://localhost:3000", 

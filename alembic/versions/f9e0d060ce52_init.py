@@ -1,6 +1,6 @@
 """init
 
-Revision ID: f9e0d060ce52
+Revision ID: 882bdf2bd842
 Revises: 
 Create Date: 2025-11-28 15:09:55.109533
 
@@ -14,7 +14,7 @@ import sqlalchemy as sa
 
 
 # revision identifiers, used by Alembic.
-revision: str = 'f9e0d060ce52'
+revision: str = '882bdf2bd842'
 down_revision: Union[str, Sequence[str], None] = None
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
@@ -31,6 +31,7 @@ def upgrade() -> None:
     sa.PrimaryKeyConstraint('id')
     )
     op.create_index(op.f('ix_user_id'), 'user', ['id'], unique=False)
+    op.create_index(op.f('ix_user_email'), 'user', ['email'], unique=True)
     op.create_table('privatedata',
     sa.Column('user_id', sa.Uuid(), nullable=False),
     sa.Column('hashed_password', sqlmodel.sql.sqltypes.AutoString(), nullable=False),
@@ -49,6 +50,7 @@ def upgrade() -> None:
     op.create_table('projectuserlink',
     sa.Column('project_id', sa.Integer(), nullable=False),
     sa.Column('user_id', sa.Uuid(), nullable=False),
+    sa.Column('project_role', sa.Enum('MANAGER', 'VIEWER', 'EDITOR', 'CREATOR', name='projectrole'), nullable=True),
     sa.ForeignKeyConstraint(['project_id'], ['project.id'], ),
     sa.ForeignKeyConstraint(['user_id'], ['user.id'], ),
     sa.PrimaryKeyConstraint('project_id', 'user_id')

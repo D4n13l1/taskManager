@@ -1,5 +1,5 @@
 from fastapi import APIRouter, HTTPException, Depends, status
-from models.models import UserCreate, UserRead, User, UserUpdate, PrivateData
+from models.models import UserCreate, UserRead, User, UserUpdate, PrivateData, Role
 from dependencies.dependencies import get_session
 from passlib.context import CryptContext
 from typing import List
@@ -13,7 +13,7 @@ user_router = APIRouter(prefix="/users", tags=["users"], dependencies=[Depends(g
 pwd_context = CryptContext(schemes=["pbkdf2_sha256"], deprecated="auto")
 
 @user_router.post("/", response_model=UserRead)
-async def create_user(user_input: UserCreate, session: Session = Depends(get_session), current_user: User = Depends(get_admin_user)):
+async def create_user(user_input: UserCreate, session: Session = Depends(get_session), _: User = Depends(get_admin_user)):
     hashed_password = pwd_context.hash(user_input.password)
     
     statement = select(User).where(User.email == user_input.email)
@@ -38,19 +38,24 @@ async def create_user(user_input: UserCreate, session: Session = Depends(get_ses
     return new_user
 
 @user_router.get("/{user_id}", response_model=UserRead)
-async def get_user(user_id: uuid.UUID, session: Session = Depends(get_session)):
+async def get_user(user_id: uuid.UUID, session: Session = Depends(get_session), current_user: User = Depends(get_current_user)):
+    if (current_user.role != Role.ADMIN) and (current_user.id != user_id):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN)
     db_user = session.get(User, user_id)
     if not db_user:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
     return db_user
 
 @user_router.get("/", response_model=List[UserRead])
-async def get_all_user(session: Session = Depends(get_session)):
+async def get_all_user(session: Session = Depends(get_session), _:User = Depends(get_admin_user)):
     users = session.exec(select(User)).all()
     return users
 
 @user_router.patch("/{user_id}", response_model=UserRead)
-async def update_user(user_update: UserUpdate, user_id: uuid.UUID, session: Session = Depends(get_session), current_user: User = Depends(get_admin_user)):
+async def update_user(user_update: UserUpdate, user_id: uuid.UUID, session: Session = Depends(get_session), current_user: User = Depends(get_current_user)):
+    if (current_user.role != Role.ADMIN) and (current_user.id != user_id):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN)
+    
     statement = select(User).where(User.id == user_id).options(selectinload(User.private_data)) #type: ignore
     db_user = session.exec(statement=statement).first()
     

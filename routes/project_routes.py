@@ -45,6 +45,7 @@ async def create_project(project_data: ProjectCreate, session: Session = Depends
 
 class UserRequest(BaseModel):
     user_id: uuid.UUID
+    
 @project_router.patch("/{project_id}/remove_user", response_model=dict)
 async def remove_user_from_project(project_id: int, request: UserRequest, session: Session = Depends(get_session)):
     db_user = session.get(User, request.user_id)
