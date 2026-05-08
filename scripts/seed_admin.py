@@ -1,4 +1,10 @@
+from pathlib import Path
+import sys
+
 from sqlmodel import Session, select
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
 from db.database import engine
 from passlib.context import CryptContext
 from models.models import User, PrivateData, Role
@@ -15,27 +21,32 @@ ADMIN_PASSWORD = "12345678"
 def seed_admin():
     with Session(engine) as session:
         statement = select(User).where(User.email == ADMIN_EMAIL)
-        existing = session.exec(statement).first() 
-        
+        existing = session.exec(statement).first()
+
         if existing:
-            return KeyError
-        
+            return existing
+
         hashed_password = pwd_context.hash(ADMIN_PASSWORD)
-    
-    new_user = User(name="admin",
-                    email=ADMIN_EMAIL,
-                    role=Role.ADMIN)
-    
-    new_private_data = PrivateData(
-        user_id=new_user.id,
-        hashed_password=hashed_password,
-    )
-    
-    session.add(new_user)
-    session.add(new_private_data)
-    session.commit()
-    session.refresh(new_user)
-    
-    return new_user
+
+        new_user = User(
+            name="admin",
+            email=ADMIN_EMAIL,
+            role=Role.ADMIN,
+        )
+        session.add(new_user)
+        session.flush()
+
+        new_private_data = PrivateData(
+            user_id=new_user.id,
+            hashed_password=hashed_password,
+        )
+
+        session.add(new_private_data)
+        session.commit()
+        session.refresh(new_user)
+
+        return new_user
+
+
 if __name__ == "__main__":
     seed_admin()
